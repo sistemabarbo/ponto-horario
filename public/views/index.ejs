@@ -1,281 +1,4 @@
-<!-- <!DOCTYPE html>
-<html lang="pt-br">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sistema de Ponto</title>    
-</head>
-<style>
-    body {
-        font-family: Arial, sans-serif;
-        background-color: #f4f4f4;
-        text-align: center;
-        padding: 20px;
-    }
-    
-    h1 {
-        color: #333;
-    }
-    
-    button {
-        margin: 10px;
-        padding: 10px 20px;
-        font-size: 16px;
-        cursor: pointer;
-    }
-    
-    button:hover {
-        background-color: #007BFF;
-        color: #fff;
-    }
-    
-</style>
-<body>
-    <h1>Sistema</h1>
-
-    
-    <form id="pontoForm">
-        <label for="funcionario_id">Selecione o Funcionário:</label>
-        <select name="funcionario_id" id="funcionario_id">
-            <% funcionarios.forEach(funcionario => { %>
-                <option value="<%= funcionario.id %>"><%= funcionario.nome %></option>
-            <% }) %>
-        </select>
-
-        <button type="button" id="entrada" onclick="baterPonto('entrada')">Bater Entrada</button>
-        <button type="button" id="entradas" onclick="baterPonto('saida-almoco')">Saída para Almoço</button>
-        <button type="button" id="entrada11" onclick="baterPonto('volta-almoco')">Volta do Almoço</button>
-        <button type="button" id="entrada12" onclick="baterPonto('saida')">Bater Saída</button>
-    </form>
-
-   
-    <h2>Cadastrar Novo Funcionário</h2>
-    <form id="cadastroFuncionarioForm">
-        <input type="text" name="nome" placeholder="Nome" required>
-        <input type="email" name="email" placeholder="Email" required>
-        <input type="password" name="senha" placeholder="Senha" required>
-        <button type="button" onclick="cadastrarFuncionario()">Cadastrar</button>
-    </form>
-
-    <h2>Gerar Relatório de Horas Trabalhadas</h2>
-    <form id="relatorioForm">
-        <label for="funcionario_id">Funcionário:</label>
-        <select name="funcionario_id" id="funcionario_id_relatorio">
-            <% funcionarios.forEach(funcionario => { %>
-                <option value="<%= funcionario.id %>"><%= funcionario.nome %></option>
-            <% }) %>
-        </select>
-        <label for="data_inicio">Data Início:</label>
-        <input type="date" id="data_inicio" required>
-        <label for="data_fim">Data Fim:</label>
-        <input type="date" id="data_fim" required>
-        <button type="button" onclick="gerarRelatorio()">Gerar Relatório</button>
-    </form>
-
-    <h3>Relatório</h3>
-    <table id="tabelaRelatorio" border="1">
-        <thead>
-            <tr>
-                <th>Data</th>
-                <th>Entrada</th>
-                <th>Saída Almoço</th>
-                <th>Volta Almoço</th>
-                <th>Saída</th>
-            </tr>
-        </thead>
-        <tbody>
-            
-        </tbody>
-    </table>
-    <h2>Editar Registro de Ponto</h2>
-    <form id="editarPontoForm">
-        <label for="funcionario_id_editar">Funcionário:</label>
-        <select name="funcionario_id" id="funcionario_id_editar">
-            <% funcionarios.forEach(funcionario => { %>
-                <option value="<%= funcionario.id %>"><%= funcionario.nome %></option>
-            <% }) %>
-        </select>
-        
-        <label for="data_editar">Data:</label>
-        <input type="date" id="data_editar" required>
-    
-        <label for="entrada_editar">Entrada:</label>
-        <input type="time" id="entrada_editar">
-    
-        <label for="saida_almoco_editar">Saída Almoço:</label>
-        <input type="time" id="saida_almoco_editar">
-    
-        <label for="volta_almoco_editar">Volta Almoço:</label>
-        <input type="time" id="volta_almoco_editar">
-    
-        <label for="saida_editar">Saída:</label>
-        <input type="time" id="saida_editar">
-    
-        <button type="button" onclick="editarPonto()">Salvar Alterações</button>
-    </form>
-     -->
-     <script> 
-      /* function baterPonto(tipo) {
-            const form = document.getElementById('pontoForm');
-            const funcionario_id = form.funcionario_id.value;
-        
-            const data = { funcionario_id };
-            console.log("Dados enviados:", data);
-        
-            fetch(`/ponto/${tipo}`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify(data)
-            })
-            .then(response => {
-                if (!response.ok) {
-                    return response.json().then(err => {
-                        throw new Error(err.message); // Lança erro com a mensagem do servidor
-                    });
-                }
-                return response.json();
-            })
-            .then(result => {
-                alert(result.message); // Mensagem de sucesso
-                // Código para desabilitar botões...
-            })
-            .catch(error => {
-                alert(error.message); // Mensagem de erro
-                console.error('Erro ao bater ponto:', error);
-            });
-        }
-        
-        
-
-        function gerarRelatorio() {
-            const funcionario_id = document.querySelector('#funcionario_id_relatorio').value;
-            const data_inicio = document.querySelector('#data_inicio').value;
-            const data_fim = document.querySelector('#data_fim').value;
-            console.log('Funcionario ID:', funcionario_id, 'Data Início:', data_inicio, 'Data Fim:', data_fim);
-            fetch(`/relatorio?funcionario_id=${funcionario_id}&data_inicio=${data_inicio}&data_fim=${data_fim}`)
-                .then(response => {
-                    if (!response.ok) {
-                        throw new Error('Erro ao obter o relatório');
-                    }
-                    return response.json();
-                })
-                .then(data => {
-                    if (data.message) {
-                        alert(data.message); 
-                    } else {
-                        exibirRelatorio(data); 
-                    }
-                })
-                .catch(error => {
-                    console.error('Erro ao gerar relatório:', error);
-                });
-        }
-
-        function exibirRelatorio(dados) {
-            const tabelaRelatorio = document.querySelector('#tabelaRelatorio tbody');
-            tabelaRelatorio.innerHTML = ''; 
-        
-            // Função para converter minutos em horas e minutos
-            function formatarHorasEMinutos(minutosTotais) {
-                const horas = Math.floor(minutosTotais / 60);
-                const minutos = minutosTotais % 60;
-                return `${horas}h ${minutos}m`;
-            }
-        
-            dados.pontos.forEach(ponto => {
-                const linha = document.createElement('tr');
-                linha.innerHTML = `
-                    <td>${ponto.data}</td>
-                    <td>${ponto.entrada || 'N/A'}</td>
-                    <td>${ponto.saida_almoco || 'N/A'}</td>
-                    <td>${ponto.volta_almoco || 'N/A'}</td>
-                    <td>${ponto.saida || 'N/A'}</td>
-                    <td>${ponto.horas_trabalhadas !== undefined ? formatarHorasEMinutos(ponto.horas_trabalhadas * 60) : 'N/A'}</td>
-                    <td>${ponto.saldo_diario !== undefined ? formatarHorasEMinutos(ponto.saldo_diario * 60) : 'N/A'}</td>
-                `;
-                tabelaRelatorio.appendChild(linha);
-            });
-        
-            // Exibindo o saldo total de horas
-            const saldoTotalMinutos = dados.saldoTotal * 60;  // Multiplica para converter de horas para minutos
-            const saldoTotalElement = document.createElement('p');
-            saldoTotalElement.textContent = `Saldo Total de Horas: ${formatarHorasEMinutos(saldoTotalMinutos)}`;
-            saldoTotalElement.style.color = dados.saldoTotal >= 0 ? 'blue' : 'red'; // 
-            document.body.appendChild(saldoTotalElement);
-        }
-        
-        
-
-        function cadastrarFuncionario() {
-            const form = document.getElementById('cadastroFuncionarioForm');
-            
-            // Cria um objeto com os dados do formulário
-            const data = {
-                nome: form.nome.value,
-                email: form.email.value,
-                senha: form.senha.value
-            };
-        console.log("dados", data);
-            fetch('/funcionarios/cadastrar', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify(data)
-            })
-            .then(response => response.text())
-            .then(result => alert(result))
-            .catch(error => console.error('Erro ao cadastrar funcionário:', error));
-        }
-
-        function carregarFuncionarios() {
-            fetch('/funcionarios')
-                .then(response => response.json())
-                .then(funcionarios => {
-                    const select = document.querySelector('#funcionario_id');
-                    funcionarios.forEach(funcionario => {
-                        const option = document.createElement('option');
-                        option.value = funcionario.id;  // O valor será o ID do funcionário
-                        option.textContent = funcionario.nome;  // O texto será o nome do funcionário
-                        select.appendChild(option);
-                    });
-                })
-                .catch(error => console.error('Erro ao carregar funcionários:', error));
-        }
-        function editarPonto() {
-            const form = document.getElementById('editarPontoForm');
-            const funcionario_id = form.funcionario_id_editar.value;
-            const data = form.data_editar.value;
-            const entrada = form.entrada_editar.value;
-            const saida_almoco = form.saida_almoco_editar.value;
-            const volta_almoco = form.volta_almoco_editar.value;
-            const saida = form.saida_editar.value;
-        
-            const dados = {
-                funcionario_id,
-                data,
-                entrada,
-                saida_almoco,
-                volta_almoco,
-                saida
-            };
-        
-            fetch(`/ponto/editar`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify(dados)
-            })
-            .then(response => response.text())
-            .then(result => alert(result))
-            .catch(error => console.error('Erro ao editar ponto:', error));
-        }
-        
- */</script>
- <!DOCTYPE html>
+<!DOCTYPE html>
  <html lang="pt-br">
  <head>
      <meta charset="UTF-8">
@@ -444,45 +167,46 @@
          </form>
             
          <h2>Gerar Relatório de Horas Trabalhadas</h2>
-         <form id="relatorioForm">
-             <div class="form-group">
-                 <label for="funcionario_id">Funcionário:</label>
-                 <select name="funcionario_id" id="funcionario_id_relatorio">
-                     <% funcionarios.forEach(funcionario => { %>
-                         <option value="<%= funcionario.id %>"><%= funcionario.nome %></option>
-                     <% }) %>
-                 </select>
-             </div>
-             <div class="form-group">
-                 <label for="data_inicio">Data Início:</label>
-                 <input type="date" id="data_inicio" required>
-             </div>
-             <div class="form-group">
-                 <label for="data_fim">Data Fim:</label>
-                 <input type="date" id="data_fim" required>
-             </div>
-             <button type="button" class="btn-primary" onclick="gerarRelatorio()">Gerar Relatório</button>
-         </form>
- 
-         <h3>Relatório</h3>
-         <div id="saldoTotalDisplay"></div>
-         <table id="tabelaRelatorio">
-             <thead>
-                 <tr>
-                     <th>Data</th>
-                     <th>Entrada</th>
-                     <th>Saída Almoço</th>
-                     <th>Volta Almoço</th>
-                     <th>Saída</th>
-                     <th>Horas</th>
-                     <th>Saldos</th>
-                 </tr>
-             </thead>
-             <tbody>
-                 <!-- Linhas do relatório serão adicionadas aqui dinamicamente -->
-             </tbody>
-         </table>
- 
+<form id="relatorioForm">
+    <div class="form-group">
+        <label for="funcionario_id">Funcionário:</label>
+        <select name="funcionario_id" id="funcionario_id_relatorio">
+            <% funcionarios.forEach(funcionario => { %>
+                <option value="<%= funcionario.id %>"><%= funcionario.nome %></option>
+            <% }) %>
+        </select>
+    </div>
+    <div class="form-group">
+        <label for="data_inicio">Data Início:</label>
+        <input type="date" id="data_inicio" required>
+    </div>
+    <div class="form-group">
+        <label for="data_fim">Data Fim:</label>
+        <input type="date" id="data_fim" required>
+    </div>
+    <button type="button" class="btn-primary" onclick="gerarRelatorio()">Gerar Relatório</button>
+    <button type="button" class="btn-secondary" onclick="exportarRelatorio()">Exportar Relatório</button>
+</form>
+
+<h3>Relatório</h3>
+<div id="saldoTotalDisplay"></div>
+<table id="tabelaRelatorio">
+    <thead>
+        <tr>
+            <th>Data</th>
+            <th>Entrada</th>
+            <th>Saída Almoço</th>
+            <th>Volta Almoço</th>
+            <th>Saída</th>
+            <th>Horas</th>
+            <th>Saldos</th>
+        </tr>
+    </thead>
+    <tbody>
+        <!-- Linhas do relatório serão adicionadas aqui dinamicamente -->
+    </tbody>
+</table>
+
          <h2>Editar Registro de Ponto</h2>
          <form id="editarPontoForm">
              <div class="form-group">
@@ -622,7 +346,14 @@ linhaSaldoTotal.innerHTML = `
 
 document.querySelector('#tabelaRelatorio tbody').appendChild(linhaSaldoTotal);
         }
-         
+        function exportarRelatorio() {
+            const funcionarioId = document.getElementById('funcionario_id_relatorio').value;
+            const dataInicio = document.getElementById('data_inicio').value;
+            const dataFim = document.getElementById('data_fim').value;
+    
+            const url = `/relatorio/exportar?funcionario_id=${funcionarioId}&data_inicio=${dataInicio}&data_fim=${dataFim}`;
+            window.location.href = url; // Redireciona para o endpoint de exportação
+        }
          function cadastrarFuncionario() {
             const form = document.getElementById('cadastroFuncionarioForm');
             
@@ -739,4 +470,3 @@ document.querySelector('#tabelaRelatorio tbody').appendChild(linhaSaldoTotal);
      </script>
  </body>
  </html>
- 
