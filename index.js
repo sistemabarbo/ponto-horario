@@ -1,4 +1,6 @@
 const express = require('express');
+const fs = require('fs');
+const { Parser } = require('json2csv');
 const path = require('path');
 const pg = require('pg');
 const cors = require('cors');
@@ -200,7 +202,38 @@ app.get('/relatorio', (req, res) => {
         }
     });
 });
+app.get('/relatorio/exportar', (req, res) => {
+    const { funcionario_id, data_inicio, data_fim } = req.query;
 
+    const sql = `
+        SELECT 
+            data, 
+            entrada, 
+            saida_almoco, 
+            volta_almoco, 
+            saida, 
+            EXTRACT(epoch FROM (saida - entrada)) / 60 - EXTRACT(epoch FROM (volta_almoco - saida_almoco)) / 60 AS horas_trabalhadas 
+        FROM pontos 
+        WHERE funcionario_id = $1 AND data BETWEEN $2 AND $3
+    `;
+
+    db.query(sql, [funcionario_id, data_inicio, data_fim], (err, result) => {
+        if (err) {
+            return res.status(500).json({ error: 'Erro ao gerar relatório' });
+        }
+
+        const pontos = result.rows;
+
+        // Converte os dados para CSV
+        const json2csvParser = new Parser();
+        const csv = json2csvParser.parse(pontos);
+
+        // Define o cabeçalho para download do CSV
+        res.header('Content-Type', 'text/csv');
+        res.attachment('relatorio_horas_trabalhadas.csv');
+        res.send(csv);
+    });
+});
 
 // Rota para cadastrar um novo funcionário
 app.post('/funcionarios/cadastrar', (req, res) => {
