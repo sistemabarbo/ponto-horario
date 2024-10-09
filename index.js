@@ -6,6 +6,18 @@ const pg = require('pg');
 const cors = require('cors');
 const bodyParser = require('body-parser');
 require('dotenv').config(); 
+const session = require('express-session');
+
+// Configurando middleware de sessão
+app.use(session({
+  secret: 'seu_segredo_seguro', // Alterar para um segredo forte
+  resave: false,
+  saveUninitialized: true,
+  cookie: { secure: false } // Em produção, defina como true se estiver usando HTTPS
+}));
+
+
+
 const app = express();
 app.use(cors());
 app.set('view engine', 'ejs');
@@ -45,27 +57,41 @@ app.get('/', (req, res) => {
 
 // Rota para bater o ponto de entrada
 app.post('/ponto/entrada', async (req, res) => {
-    const { funcionario_id } = req.body;
+    const { funcionario_id, senha } = req.body; // Agora também recebemos a senha
 
     // Obter a data atual
     const dataAtual = new Date(); // Captura a data e hora atual
     const horaEntrada = dataAtual.toTimeString().slice(0, 8); // Obtendo apenas o tempo (HH:mm:ss)
 
     try {
-        // Consulta para verificar se já existe uma entrada no dia atual
-        const result = await db.query(
+        // Verificar se a senha do funcionário está correta
+        const resultFuncionario = await db.query(
+            'SELECT senha FROM funcionarios WHERE id = $1',
+            [funcionario_id]
+        );
+
+        if (resultFuncionario.rows.length === 0) {
+            return res.status(404).json({ message: 'Funcionário não encontrado.' });
+        }
+
+        const senhaCorreta = resultFuncionario.rows[0].senha;
+        if (senhaCorreta !== senha) {
+            return res.status(403).json({ message: 'Senha incorreta.' });
+        }
+
+        // Verificar se já existe uma entrada no dia atual
+        const resultPonto = await db.query(
             'SELECT * FROM pontos WHERE funcionario_id = $1 AND DATE(data) = $2',
             [funcionario_id, dataAtual.toISOString().slice(0, 10)] // Formato YYYY-MM-DD
         );
 
-        if (result.rows.length > 0) {
-            // Já existe uma entrada para hoje
+        if (resultPonto.rows.length > 0) {
             return res.status(400).json({ message: 'Já existe uma entrada registrada para hoje.' });
         }
 
         // Inserir nova entrada
         const sql = 'INSERT INTO pontos (funcionario_id, entrada, data) VALUES ($1, $2, $3)';
-        await db.query(sql, [funcionario_id, horaEntrada, dataAtual]); // Passando horaEntrada e dataAtual
+        await db.query(sql, [funcionario_id, horaEntrada, dataAtual]);
 
         return res.status(200).json({ message: 'Entrada registrada com sucesso!' });
 
@@ -74,6 +100,7 @@ app.post('/ponto/entrada', async (req, res) => {
         return res.status(500).json({ error: 'Erro ao consultar o banco de dados' });
     }
 });
+
 
 // Rota para bater o ponto de saída para o almoço
 app.post('/ponto/saida-almoco', async (req, res) => {
@@ -135,6 +162,8 @@ app.post('/ponto/volta-almoco', async (req, res) => {
     }
 });
 
+
+// Rota para bater o ponto de saída
 // Rota para bater o ponto de saída
 app.post('/ponto/saida', async (req, res) => {
     const { funcionario_id } = req.body;
@@ -143,27 +172,44 @@ app.post('/ponto/saida', async (req, res) => {
     const horaSaida = dataAtual.toTimeString().slice(0, 8); // HH:mm:ss
 
     try {
-        // Verifica se já existe uma saída registrada
-        const result = await db.query(
-            'SELECT * FROM pontos WHERE funcionario_id = $1 AND DATE(data) = $2 AND saida IS NOT NULL',
+        // Consulta o ponto de entrada para calcular as horas trabalhadas
+        const resultEntrada = await db.query(
+            'SELECT entrada FROM pontos WHERE funcionario_id = $1 AND DATE(data) = $2',
             [funcionario_id, dataAtualFormatada]
         );
 
-        if (result.rows.length > 0) {
-            return res.status(400).json({ message: 'Já existe uma saída registrada para hoje.' });
+        if (resultEntrada.rows.length === 0) {
+            return res.status(400).json({ message: 'Nenhuma entrada registrada para hoje.' });
         }
 
-        // Atualiza a saída
-        const sql = 'UPDATE pontos SET saida = $1 WHERE funcionario_id = $2 AND data = $3';
-        await db.query(sql, [horaSaida, funcionario_id, dataAtual]);
+        const horaEntrada = new Date(`${dataAtualFormatada}T${resultEntrada.rows[0].entrada}`);
+        const horaSaidaCompleta = new Date(`${dataAtualFormatada}T${horaSaida}`);
 
-        return res.status(200).json({ message: 'Ponto de saída registrado com sucesso!' });
+        // Calcular horas extras após as 22h
+        const horasExtras = calcularHorasExtras(horaEntrada, horaSaidaCompleta);
+
+        // Atualiza o ponto de saída e horas extras
+        const sql = 'UPDATE pontos SET saida = $1, horas_extras = $2 WHERE funcionario_id = $3 AND data = $4';
+        await db.query(sql, [horaSaida, horasExtras, funcionario_id, dataAtual]);
+
+        return res.status(200).json({ message: 'Ponto de saída registrado com sucesso!', horasExtras });
 
     } catch (error) {
         console.error('Erro ao registrar saída:', error);
         return res.status(500).json({ error: 'Erro ao registrar saída' });
     }
 });
+function calcularHorasExtras(horaEntrada, horaSaida) {
+    const extraHoraInicio = new Date(); // Hora de início das horas extras (22h)
+    extraHoraInicio.setHours(22, 0, 0);
+
+    let totalHorasExtras = 0;
+    if (horaSaida > extraHoraInicio) {
+        totalHorasExtras = (horaSaida - extraHoraInicio) / 36e5; // Horas extras após as 22h
+    }
+
+    return totalHorasExtras;
+}
 
 app.get('/relatorio', (req, res) => {
     const { funcionario_id, data_inicio, data_fim } = req.query;
@@ -322,6 +368,81 @@ app.post('/deletar-funcionario', (req, res) => {
         console.error('Erro no servidor:', e);
         res.status(500).json({ message: 'Erro no servidor' });
     }
+});
+
+app.post('/login', async (req, res) => {
+    const { funcionario_id, senha } = req.body;
+
+    try {
+        // Verificar se o funcionário existe e obter a senha armazenada
+        const result = await db.query('SELECT senha FROM funcionarios WHERE id = $1', [funcionario_id]);
+
+        if (result.rows.length === 0) {
+            return res.status(404).json({ message: 'Funcionário não encontrado.' });
+        }
+
+        const senhaCorreta = result.rows[0].senha;
+        if (senhaCorreta !== senha) {
+            return res.status(403).json({ message: 'Senha incorreta.' });
+        }
+
+        // Login bem-sucedido
+        return res.status(200).json({ message: 'Login realizado com sucesso!' });
+
+    } catch (error) {
+        console.error('Erro ao realizar login:', error);
+        return res.status(500).json({ error: 'Erro ao realizar login' });
+    }
+});
+app.get('/login', (req, res) => {
+    res.render('login'); // Certifique-se de que 'login.ejs' esteja no diretório correto, como 'views/login.ejs'
+});
+app.post('/login', async (req, res) => {
+    const { funcionario_id, senha } = req.body;
+
+    // Simulando a verificação de senha do banco de dados
+    const funcionario = await db.query('SELECT * FROM funcionarios WHERE id = $1', [funcionario_id]);
+
+    if (funcionario && funcionario.rows.length > 0 && senha === 'senha_correta') { // Verifique a senha real aqui
+        // Se o login foi bem-sucedido, armazene o id do funcionário na sessão
+        req.session.funcionarioId = funcionario_id;
+        return res.status(200).json({ message: 'Login realizado com sucesso' });
+    } else {
+        return res.status(401).json({ message: 'Credenciais inválidas' });
+    }
+});
+
+function verificarAutenticacao(req, res, next) {
+    if (req.session.funcionarioId) {
+        // Usuário autenticado, prossiga
+        return next();
+    } else {
+        // Se não estiver autenticado, redirecione para a página de login
+        res.redirect('/login');
+    }
+}
+
+app.get('/ponto/:funcionario_id', verificarAutenticacao, async (req, res) => {
+    const funcionarioId = req.params.funcionario_id;
+
+    try {
+        const result = await db.query('SELECT id, nome FROM funcionarios');
+        res.render('ponto', {
+            funcionarios: result.rows,
+            funcionarioLogado: funcionarioId
+        });
+    } catch (error) {
+        console.error(error);
+        res.status(500).send('Erro ao buscar funcionários');
+    }
+});
+app.get('/logout', (req, res) => {
+    req.session.destroy(err => {
+        if (err) {
+            return res.status(500).send('Erro ao fazer logout');
+        }
+        res.redirect('/login');
+    });
 });
 
 
