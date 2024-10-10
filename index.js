@@ -1,4 +1,5 @@
 const express = require('express');
+const bcrypt = require('bcrypt');
 const fs = require('fs');
 const { Parser } = require('json2csv');
 const path = require('path');
@@ -7,18 +8,19 @@ const cors = require('cors');
 const bodyParser = require('body-parser');
 require('dotenv').config(); 
 const session = require('express-session');
-
+const app = express();
 // Configurando middleware de sessão
 app.use(session({
-  secret: 'seu_segredo_seguro', // Alterar para um segredo forte
-  resave: false,
-  saveUninitialized: true,
-  cookie: { secure: false } // Em produção, defina como true se estiver usando HTTPS
+    secret: 'seuSegredoAqui',
+    resave: false,
+    saveUninitialized: true,
+    cookie: { secure: false, maxAge: 30 * 60 * 1000 }  // Em produção, mude para true e use HTTPS
 }));
+  
 
 
 
-const app = express();
+
 app.use(cors());
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'public/views'));
@@ -46,60 +48,48 @@ db.connect(err => {
     console.log('Connected to the database');
    // queryDatabase();
 });
-app.get('/', (req, res) => {
-    db.query('SELECT id, nome FROM funcionarios', (err, result) => {
-        if (err) {
-            return res.status(500).send('Erro ao buscar funcionários');
-        }
-        res.render('index', { funcionarios: result.rows });
-    });
-});
-
-// Rota para bater o ponto de entrada
-app.post('/ponto/entrada', async (req, res) => {
-    const { funcionario_id, senha } = req.body; // Agora também recebemos a senha
-
-    // Obter a data atual
-    const dataAtual = new Date(); // Captura a data e hora atual
-    const horaEntrada = dataAtual.toTimeString().slice(0, 8); // Obtendo apenas o tempo (HH:mm:ss)
-
+app.get('/', verificarAutenticacao, async (req, res) => {
     try {
-        // Verificar se a senha do funcionário está correta
-        const resultFuncionario = await db.query(
-            'SELECT senha FROM funcionarios WHERE id = $1',
-            [funcionario_id]
-        );
-
-        if (resultFuncionario.rows.length === 0) {
-            return res.status(404).json({ message: 'Funcionário não encontrado.' });
-        }
-
-        const senhaCorreta = resultFuncionario.rows[0].senha;
-        if (senhaCorreta !== senha) {
-            return res.status(403).json({ message: 'Senha incorreta.' });
-        }
-
-        // Verificar se já existe uma entrada no dia atual
-        const resultPonto = await db.query(
-            'SELECT * FROM pontos WHERE funcionario_id = $1 AND DATE(data) = $2',
-            [funcionario_id, dataAtual.toISOString().slice(0, 10)] // Formato YYYY-MM-DD
-        );
-
-        if (resultPonto.rows.length > 0) {
-            return res.status(400).json({ message: 'Já existe uma entrada registrada para hoje.' });
-        }
-
-        // Inserir nova entrada
-        const sql = 'INSERT INTO pontos (funcionario_id, entrada, data) VALUES ($1, $2, $3)';
-        await db.query(sql, [funcionario_id, horaEntrada, dataAtual]);
-
-        return res.status(200).json({ message: 'Entrada registrada com sucesso!' });
-
-    } catch (error) {
-        console.error('Erro ao consultar ou registrar a entrada:', error);
-        return res.status(500).json({ error: 'Erro ao consultar o banco de dados' });
+        const result = await db.query('SELECT id, nome FROM funcionarios');
+        res.render('index', { funcionarios: result.rows });
+    } catch (err) {
+        console.error('Erro ao buscar funcionários:', err);
+        return res.status(500).send('Erro ao buscar funcionários');
     }
 });
+
+
+// Rota para bater o ponto de entrada
+// Rota para bater o ponto de entrada
+app.post('/ponto/entrada', async (req, res) => {
+    const { funcionario_id } = req.body;
+
+    // Obter a data atual
+    const dataAtual = new Date();
+    const horaEntrada = dataAtual.toTimeString().slice(0, 8); // Obtendo apenas o tempo (HH:mm:ss)
+
+    const resultPonto = await db.query(
+        'SELECT * FROM pontos WHERE funcionario_id = $1 AND DATE(data) = $2',
+        [funcionario_id, dataAtual.toISOString().slice(0, 10)] // Formato YYYY-MM-DD
+    );
+
+    if (resultPonto.rows.length > 0) {
+        return res.status(400).json({ message: 'Já existe uma entrada registrada para hoje.' });
+    }
+
+    // Verifica se a hora de entrada é maior que 22h (10 PM)
+    if (dataAtual.getHours() >= 22) {
+        // Se sim, ajusta a data para o dia seguinte
+        dataAtual.setDate(dataAtual.getDate() + 1);
+    }
+
+    // Inserir nova entrada
+    const sql = 'INSERT INTO pontos (funcionario_id, entrada, data) VALUES ($1, $2, $3)';
+    await db.query(sql, [funcionario_id, horaEntrada, dataAtual]);
+
+    return res.status(200).json({ message: 'Entrada registrada com sucesso!' });
+});
+
 
 
 // Rota para bater o ponto de saída para o almoço
@@ -174,23 +164,44 @@ app.post('/ponto/saida', async (req, res) => {
     try {
         // Consulta o ponto de entrada para calcular as horas trabalhadas
         const resultEntrada = await db.query(
-            'SELECT entrada FROM pontos WHERE funcionario_id = $1 AND DATE(data) = $2',
+            'SELECT entrada, data FROM pontos WHERE funcionario_id = $1 AND DATE(data) = $2',
             [funcionario_id, dataAtualFormatada]
         );
 
-        if (resultEntrada.rows.length === 0) {
-            return res.status(400).json({ message: 'Nenhuma entrada registrada para hoje.' });
+        if (resultEntrada.rows.length > 0) {
+            return res.status(400).json({ message: 'Já existe uma volta do almoço registrada para hoje.' });
         }
 
-        const horaEntrada = new Date(`${dataAtualFormatada}T${resultEntrada.rows[0].entrada}`);
-        const horaSaidaCompleta = new Date(`${dataAtualFormatada}T${horaSaida}`);
+        const horaEntrada = new Date(`${resultEntrada.rows[0].data}T${resultEntrada.rows[0].entrada}`);
+        let horaSaidaCompleta = new Date(`${dataAtualFormatada}T${horaSaida}`);
 
-        // Calcular horas extras após as 22h
+        // Se a saída ocorrer antes das 6h da manhã, ajusta a data da saída para o dia anterior
+        if (horaSaidaCompleta.getHours() < 6) {
+            horaSaidaCompleta.setDate(horaSaidaCompleta.getDate() - 1); // Ajusta para o dia anterior
+        }
+
+        // Adiciona condições específicas para ajustes de horas após a meia-noite
+        if (horaSaida === "03:00:00") { 
+            horaSaidaCompleta.setHours(23, 0, 0); // Ajusta para 23:00 do dia anterior
+            horaSaidaCompleta.setHours(horaSaidaCompleta.getHours() + 4); // Adiciona 4 horas
+        } else if (horaSaida >= "02:00:00" && horaSaida < "03:00:00") { 
+            horaSaidaCompleta.setHours(23, 0, 0); // Ajusta para 23:00 do dia anterior
+            horaSaidaCompleta.setHours(horaSaidaCompleta.getHours() + 3, 30); // Adiciona 3 horas e meia
+        } else if (horaSaida < "02:00:00" && horaSaida >= "01:00:00") {
+            horaSaidaCompleta.setHours(23, 45, 0); // Ajusta para 23:45 do dia anterior
+            horaSaidaCompleta.setHours(horaSaidaCompleta.getHours() + 3, 15); // Adiciona 3 horas e 15 minutos
+        } else if (horaSaida > "00:00:00" && horaSaida < "01:00:00") {
+            horaSaidaCompleta.setHours(23, 30, 0); // Ajusta para 23:30 do dia anterior
+            horaSaidaCompleta.setHours(horaSaidaCompleta.getHours() + 3); // Adiciona 3 horas
+        }
+        
+
+        // Calcula horas extras após as 22:00
         const horasExtras = calcularHorasExtras(horaEntrada, horaSaidaCompleta);
 
-        // Atualiza o ponto de saída e horas extras
+        // Atualiza o ponto de saída e horas extras no banco de dados
         const sql = 'UPDATE pontos SET saida = $1, horas_extras = $2 WHERE funcionario_id = $3 AND data = $4';
-        await db.query(sql, [horaSaida, horasExtras, funcionario_id, dataAtual]);
+        await db.query(sql, [horaSaidaCompleta.toTimeString().slice(0, 8), horasExtras, funcionario_id, resultEntrada.rows[0].data]);
 
         return res.status(200).json({ message: 'Ponto de saída registrado com sucesso!', horasExtras });
 
@@ -199,22 +210,30 @@ app.post('/ponto/saida', async (req, res) => {
         return res.status(500).json({ error: 'Erro ao registrar saída' });
     }
 });
-function calcularHorasExtras(horaEntrada, horaSaida) {
-    const extraHoraInicio = new Date(); // Hora de início das horas extras (22h)
-    extraHoraInicio.setHours(22, 0, 0);
 
-    let totalHorasExtras = 0;
-    if (horaSaida > extraHoraInicio) {
-        totalHorasExtras = (horaSaida - extraHoraInicio) / 36e5; // Horas extras após as 22h
+function calcularHorasExtras(horaEntrada, horaSaidaCompleta) {
+    const hora22 = new Date(horaSaidaCompleta);
+    hora22.setHours(22, 0, 0); // Define 22:00:00 no mesmo dia
+
+    let horasExtras = 0;
+
+    // Se a saída for após 22 horas
+    if (horaSaidaCompleta > hora22) {
+        // Horas normais até 22:00
+        const horasTrabalhadasAte22 = (hora22 - horaEntrada) / 3600000; // Horas até 22:00
+        const horasTrabalhadasApos22 = (horaSaidaCompleta - hora22) / 3600000; // Horas após 22:00
+
+        // Dobra as horas após 22:00
+        horasExtras = horasTrabalhadasApos22 * 2;
     }
 
-    return totalHorasExtras;
+    return horasExtras;
 }
+
 
 app.get('/relatorio', (req, res) => {
     const { funcionario_id, data_inicio, data_fim } = req.query;
-    console.log("req", req.query);
-    const jornadaEsperada = 8 * 60; // Convertendo horas diárias esperadas para minutos
+    const jornadaEsperada = 8 * 60; // Jornada diária esperada em minutos (8 horas = 480 minutos)
 
     const sql = `
         SELECT 
@@ -222,10 +241,13 @@ app.get('/relatorio', (req, res) => {
             entrada, 
             saida_almoco, 
             volta_almoco, 
-            saida, 
-            EXTRACT(epoch FROM (saida - entrada)) / 60 - EXTRACT(epoch FROM (volta_almoco - saida_almoco)) / 60 AS horas_trabalhadas 
+            saida,
+            horas_extras,
+            -- Cálculo das horas trabalhadas
+            (EXTRACT(epoch FROM (saida - entrada)) / 60) - 
+            (EXTRACT(epoch FROM (volta_almoco - saida_almoco)) / 60) AS horas_trabalhadas
         FROM pontos 
-        WHERE funcionario_id = $1 AND data BETWEEN $2 AND $3
+        WHERE funcionario_id = $1 AND data BETWEEN $2 AND $3;
     `;
 
     db.query(sql, [funcionario_id, data_inicio, data_fim], (err, result) => {
@@ -233,21 +255,60 @@ app.get('/relatorio', (req, res) => {
             res.status(500).json({ error: 'Erro ao gerar relatório' });
         } else {
             const pontos = result.rows;
-            let saldoTotal = 0; // saldo total de minutos
+            let saldoTotal = 0; // saldo total em minutos
 
             // Calculando o saldo de horas de cada dia
             pontos.forEach(ponto => {
-                const horasTrabalhadasEmMinutos = ponto.horas_trabalhadas || 0; // em caso de ausência de dados
+                const saida = new Date(`${ponto.data}T${ponto.saida}`);
+                const entrada = new Date(`${ponto.data}T${ponto.entrada}`);
+
+                // Se a saída for antes de 6h da manhã, considera a saída do dia anterior
+                if (saida.getHours() < 6) {
+                    saida.setDate(saida.getDate() - 1);
+                }
+
+                // Calcula as horas trabalhadas em minutos
+                const horasTrabalhadasEmMinutos = (saida - entrada) / 60000; // Em minutos
+
+                // Cálculo do saldo diário
                 const saldoDiario = horasTrabalhadasEmMinutos - jornadaEsperada;
                 ponto.saldo_diario = saldoDiario / 60; // Converte saldo diário para horas
-                saldoTotal += saldoDiario;  // Acumula saldo diário em minutos
+
+                // Cálculo de horas extras após 22h
+                let horasExtras = 0;
+                const hora22 = new Date(ponto.data);
+                hora22.setHours(22, 0, 0); // Define 22:00:00
+
+                // Se a saída for após 22:00
+                if (saida > hora22) {
+                    const horasTrabalhadasApos22 = (saida - hora22) / 60000; // Horas após 22:00 em minutos
+                    horasExtras = horasTrabalhadasApos22 * 2; // Dobra as horas extras
+                }
+
+                // Atualiza o saldo total
+                saldoTotal += saldoDiario + horasExtras; // Acumula saldo diário e horas extras em minutos
+
+                // Formata a data no formato dd-mm-yy
+                const data = new Date(ponto.data); // Converte a data para objeto Date
+                ponto.data = data.toLocaleDateString('pt-BR'); // Formata a data
             });
 
-            // Adiciona o saldo total em horas
-            res.json({ pontos, saldoTotal: saldoTotal / 60 });  // Saldo total também em horas
+            // Formata saldo total para horas e minutos
+            const saldoTotalHoras = Math.floor(saldoTotal / 60);
+            const saldoTotalMinutos = saldoTotal % 60;
+
+            res.json({
+                pontos, 
+                saldoTotal: saldoTotalHoras + saldoTotalMinutos / 60 // Saldo total em formato decimal
+            });
         }
     });
 });
+
+
+
+
+
 app.get('/relatorio/exportar', (req, res) => {
     const { funcionario_id, data_inicio, data_fim } = req.query;
 
@@ -369,73 +430,81 @@ app.post('/deletar-funcionario', (req, res) => {
         res.status(500).json({ message: 'Erro no servidor' });
     }
 });
-
-app.post('/login', async (req, res) => {
-    const { funcionario_id, senha } = req.body;
-
-    try {
-        // Verificar se o funcionário existe e obter a senha armazenada
-        const result = await db.query('SELECT senha FROM funcionarios WHERE id = $1', [funcionario_id]);
-
-        if (result.rows.length === 0) {
-            return res.status(404).json({ message: 'Funcionário não encontrado.' });
-        }
-
-        const senhaCorreta = result.rows[0].senha;
-        if (senhaCorreta !== senha) {
-            return res.status(403).json({ message: 'Senha incorreta.' });
-        }
-
-        // Login bem-sucedido
-        return res.status(200).json({ message: 'Login realizado com sucesso!' });
-
-    } catch (error) {
-        console.error('Erro ao realizar login:', error);
-        return res.status(500).json({ error: 'Erro ao realizar login' });
-    }
-});
 app.get('/login', (req, res) => {
     res.render('login'); // Certifique-se de que 'login.ejs' esteja no diretório correto, como 'views/login.ejs'
 });
 app.post('/login', async (req, res) => {
     const { funcionario_id, senha } = req.body;
 
-    // Simulando a verificação de senha do banco de dados
-    const funcionario = await db.query('SELECT * FROM funcionarios WHERE id = $1', [funcionario_id]);
+    try {
+        const result = await db.query('SELECT senha FROM funcionarios WHERE id = $1', [funcionario_id]);
 
-    if (funcionario && funcionario.rows.length > 0 && senha === 'senha_correta') { // Verifique a senha real aqui
-        // Se o login foi bem-sucedido, armazene o id do funcionário na sessão
+        // Verifica se o funcionário foi encontrado
+        if (result.rows.length === 0) {
+            return res.status(404).json({ message: 'Funcionário não encontrado.' });
+        }
+
+        const senhaCorreta = result.rows[0].senha;
+
+        // Comparação direta da senha (sem bcrypt)
+        console.log(`Senha no banco: ${senhaCorreta}, Senha inserida: ${senha}`);
+
+        if (senha !== senhaCorreta) {
+            return res.status(403).json({ message: 'Senha incorreta.' });
+        }
+
+        // Login bem-sucedido, criar sessão
         req.session.funcionarioId = funcionario_id;
-        return res.status(200).json({ message: 'Login realizado com sucesso' });
-    } else {
-        return res.status(401).json({ message: 'Credenciais inválidas' });
+        return res.status(200).json({ message: 'Login realizado com sucesso!' });
+    } catch (error) {
+        console.error('Erro ao realizar login:', error);
+        return res.status(500).json({ message: 'Erro ao realizar login' });
     }
 });
 
+
+
 function verificarAutenticacao(req, res, next) {
-    if (req.session.funcionarioId) {
-        // Usuário autenticado, prossiga
+    console.log('Sessão:', req.session);
+    if (req.session && req.session.funcionarioId) {
         return next();
     } else {
-        // Se não estiver autenticado, redirecione para a página de login
-        res.redirect('/login');
+        return res.redirect('/login');
     }
 }
 
-app.get('/ponto/:funcionario_id', verificarAutenticacao, async (req, res) => {
+
+
+
+// Rota protegida para o ponto
+app.get('/index/:funcionario_id', verificarAutenticacao, async (req, res) => {
+    
     const funcionarioId = req.params.funcionario_id;
 
     try {
         const result = await db.query('SELECT id, nome FROM funcionarios');
-        res.render('ponto', {
-            funcionarios: result.rows,
-            funcionarioLogado: funcionarioId
-        });
+        res.render('index', { funcionarios: result.rows, funcionarioLogado: funcionarioId });
     } catch (error) {
-        console.error(error);
+        console.error('Erro ao buscar funcionários:', error);
         res.status(500).send('Erro ao buscar funcionários');
     }
 });
+app.post('/verificar-senha', (req, res) => {
+    const { senha } = req.body;
+    
+    // Defina a senha correta
+    const senhaCorreta = '123';  // Defina uma senha segura ou use um hash de senha
+
+    if (senha === senhaCorreta) {
+        // Senha correta, retorna sucesso
+        res.json({ autenticado: true });
+    } else {
+        // Senha incorreta, retorna erro
+        res.json({ autenticado: false });
+    }
+});
+
+// Logout
 app.get('/logout', (req, res) => {
     req.session.destroy(err => {
         if (err) {
@@ -444,7 +513,6 @@ app.get('/logout', (req, res) => {
         res.redirect('/login');
     });
 });
-
 
 
 app.listen(port, () => {
