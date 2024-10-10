@@ -100,7 +100,7 @@
         
           th, td {
             padding: 10px;
-            text-align: left;
+            text-align: left;            
           }
           .saldo-positivo {
             color: blue; 
@@ -115,6 +115,11 @@
                  width: 100%;
              }
          }
+         
+         .ed-srec{
+            background-color: #DC3545;
+            color: #f0f0f0;
+         }
      </style>
  </head>
  <body>
@@ -126,7 +131,7 @@
          <form id="pontoForm">
              <div class="form-group">
                  <label for="funcionario_id">Selecione Seu Nome:</label>
-                 <select name="funcionario_id" id="funcionario_id">
+                 <select name="funcionario_id" id="funcionario_id" disabled style="color: black; font-weight: bold;">
                      <% funcionarios.forEach(funcionario => { %>
                          <option value="<%= funcionario.id %>"><%= funcionario.nome %></option>
                      <% }) %>
@@ -139,9 +144,10 @@
                  <button type="button" class="btn-secondary" onclick="baterPonto('volta-almoco')">Volta do Almoço</button>
                  <button type="button" class="btn-primary" onclick="baterPonto('saida')">Bater Saída</button>
              </div>
-         </form>
+         </form><br><br>
          <div id="loginDiv">
-            <h2>Login</h2>
+            <button class="bold" type="button" onclick="verificar()">Acesso Restrito</button><br><br>
+            <div id="conteudoProteted" style="display:none;">
             <form id="loginForm">
                 <div class="form-group">
                     <label for="senha_login">Senha:</label>
@@ -149,9 +155,10 @@
                 </div>
                 <button type="button" onclick="verificarSenha()">Entrar</button>
             </form>
+            </div>
         </div>
         <div id="conteudoProtegido" style="display:none;">
-            <button onclick="fecharSessao()">Fechar Sessão</button>
+            <button class="ed-srec" onclick="fecharSessao()">Fechar Sessão</button>
          <h2>Cadastrar Novo Funcionário</h2>
          <form id="cadastroFuncionarioForm">
              <div class="form-group">
@@ -314,7 +321,7 @@
         function exibirRelatorio(dados) {
             const tabelaRelatorio = document.querySelector('#tabelaRelatorio tbody');
             tabelaRelatorio.innerHTML = ''; 
-        
+            
             // Função para converter minutos em horas e minutos
             function formatarHorasEMinutos(minutosTotais) {
                 const horas = Math.floor(minutosTotais / 60);
@@ -335,17 +342,22 @@
                 `;
                 tabelaRelatorio.appendChild(linha);
             });
-            const saldoTotal = dados.saldoTotal !== undefined ? formatarHorasEMinutos(dados.saldoTotal * 60) : 'N/A';
-const linhaSaldoTotal = document.createElement('tr');
-const classeSaldo = dados.saldoTotal >= 0 ? 'saldo-positivo' : 'saldo-negativo'; 
-
-linhaSaldoTotal.innerHTML = `
-    <td colspan="6"><strong>Saldo Total</strong></td>
-    <td class="${classeSaldo}"><strong>${saldoTotal}</strong></td>  <!-- Aplica a classe dinâmica -->
-`;
-
-document.querySelector('#tabelaRelatorio tbody').appendChild(linhaSaldoTotal);
+        
+            const saldoTotal = formatarHorasEMinutos(dados.saldoTotal * 60);
+            const linhaSaldoTotal = document.createElement('tr');
+            const classeSaldo = dados.saldoTotal >= 0 ? 'saldo-positivo' : 'saldo-negativo'; 
+        
+            linhaSaldoTotal.innerHTML = `
+                <td colspan="6"><strong>Saldo Total</strong></td>
+                <td class="${classeSaldo}"><strong>${saldoTotal}</strong></td>  <!-- Aplica a classe dinâmica -->
+            `;
+        
+            tabelaRelatorio.appendChild(linhaSaldoTotal);
         }
+        
+
+//document.querySelector('#tabelaRelatorio tbody').appendChild(linhaSaldoTotal);
+      //  }
         function exportarRelatorio() {
             const funcionarioId = document.getElementById('funcionario_id_relatorio').value;
             const dataInicio = document.getElementById('data_inicio').value;
@@ -413,8 +425,17 @@ document.querySelector('#tabelaRelatorio tbody').appendChild(linhaSaldoTotal);
                 document.getElementById('conteudoProtegido').style.display = 'block';  // Mostra o conteúdo protegido
             }
         }
-    
-        function verificarSenha() {
+        function verificar() {
+            var conteudo = document.getElementById('conteudoProteted');
+            
+            // Alterna a visibilidade
+            if (conteudo.style.display === 'none') {
+                conteudo.style.display = 'block';  // Mostra o conteúdo
+            } else {
+                conteudo.style.display = 'none';   // Esconde o conteúdo
+            }
+        }
+       /* function verificarSenha() {
             const senha = document.getElementById('senha_login').value;
             
             // Defina a senha correta para acesso
@@ -429,7 +450,45 @@ document.querySelector('#tabelaRelatorio tbody').appendChild(linhaSaldoTotal);
             } else {
                 alert('Senha incorreta!');
             }
+        }*/
+        function verificar() {
+            var conteudo = document.getElementById('conteudoProteted');
+            if (conteudo.style.display === 'none') {
+                conteudo.style.display = 'block';
+            } else {
+                conteudo.style.display = 'none';
+            }
         }
+    
+        function verificarSenha() {
+            const senha = document.getElementById('senha_login').value;
+            
+            // Envia a senha para o backend
+            fetch('/verificar-senha', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ senha: senha })  // Envia a senha como JSON
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.autenticado) {
+                    // Armazena no Local Storage que o usuário autenticou
+                    localStorage.setItem('autenticado', 'true');
+    
+                    // Esconde a tela de login e mostra o conteúdo protegido
+                    document.getElementById('loginForm').style.display = 'none';
+                    document.getElementById('conteudoProtegido').style.display = 'block';
+                } else {
+                    alert('Senha incorreta!');
+                }
+            })
+            .catch(error => {
+                console.error('Erro ao verificar a senha:', error);
+            });
+        }
+        
     
         function fecharSessao() {
             // Remove a autenticação do Local Storage e volta para a tela de login
