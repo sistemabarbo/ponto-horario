@@ -23,21 +23,23 @@
             const funcionario_id = document.getElementById('funcionario_id').value;
             const senha = document.getElementById('senha').value;
 
-            const response = await fetch('/login', {
+            if (!funcionario_id || isNaN(funcionario_id)) {
+                alert('Por favor, insira um ID de funcionário válido.');
+                return;
+            }
+
+            const resposta = await fetch('/login', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ funcionario_id, senha }),
             });
 
-            const result = await response.json();
+            const resultado = await resposta.json();
 
-            if (response.status === 200) {
-                // Sucesso no login, redirecionar para a página de registro de ponto
-                window.location.href = `/ponto/${funcionario_id}`;
+            if (resposta.status === 200) {
+                window.location.href = `/index/${funcionario_id}`;
             } else {
-                alert(result.message);
+                alert(resultado.message);
             }
         }
     </script>
